@@ -88,6 +88,7 @@ class SosService
     SOS_pub     *sos_publication_handle;
 
     Attribute   trigger_attr;
+    Attribute   iter_class_attr;
 
     void flush_and_publish(Caliper* c) {
         Log(2).stream() << "sos: Publishing Caliper data" << std::endl;
@@ -109,8 +110,10 @@ class SosService
         pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
     }
 
+    // If it is the end of any iteration, OR the specific client-named attribute, flush.
     void post_end(Caliper* c, const Attribute& attr) {
-        if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) 
+        if (   (attr.get(iter_class_attr) == Variant(true))
+            || (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()))
             flush_and_publish(c);
     }
 
@@ -118,12 +121,14 @@ class SosService
     void post_init(Caliper* c) {
         sos_runtime            = NULL;
         sos_publication_handle = NULL;
-        //
-        SOS_init(&sos_runtime, SOS_ROLE_CLIENT, SOS_RECEIVES_NO_FEEDBACK, NULL);
-        SOS_pub_init(sos_runtime, &sos_publication_handle, "caliper.data", SOS_NATURE_DEFAULT);
-
-        // trigger_attr will be invalid if it's not found - still need to check attributes in create_attribute_cb
-        trigger_attr = c->get_attribute(config.get("trigger_attr").to_string());
+        SOS_init(&sos_runtime, SOS_ROLE_CLIENT,
+                    SOS_RECEIVES_NO_FEEDBACK, NULL);
+        SOS_pub_init(sos_runtime, &sos_publication_handle,
+                    "caliper.data", SOS_NATURE_DEFAULT);
+        // NOTE: Check for trigger_attr again at create_attr(...) because it may
+        //       not have been expressed to Caliper yet.
+        trigger_attr    = c->get_attribute(config.get("trigger_attr").to_string());
+        iter_class_attr = c->get_attribute("class.iteration");
     }
 
     // static callbacks

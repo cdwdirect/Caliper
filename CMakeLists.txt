@@ -40,7 +40,7 @@ option(WITH_OMPT      "Enable OMPT" FALSE)
 option(WITH_SAMPLER   "Enable Linux sampler (x86 and PPC Linux only)" FALSE)
 option(WITH_DYNINST   "Enable dyninst (for symbollookup service" FALSE)
 option(WITH_GOTCHA    "Enable GOTCHA wrapping" TRUE)
-option(WITH_SOS       "Enable SOSFlow data management" FALSE)
+option(WITH_SOS       "Enable SOSFlow data management" TRUE)
 option(WITH_TAU       "Enable TAU service (TAU Performance System)" FALSE)
 option(WITH_VTUNE     "Enable Intel(R) VTune(tm) annotation bindings" FALSE)
 

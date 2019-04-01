@@ -106,8 +106,32 @@ class SosService
             trigger_attr = attr;        
     }
 
+
+    void post_begin(Caliper *c, const Attribute& attr) {
+        if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) {
+            SnapshotRecord::FixedSnapshotRecord<SNAP_MAX> data;
+            SnapshotRecord rec(data);
+
+            c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &data);
+        }
+    }
+
+    void pre_end(Caliper *c, const Attribute &attr) {
+        if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) {
+            SnapshotRecord::FixedSnapshotRecord<SNAP_MAX> data;
+            SnapshotRecord rec(data);
+
+            c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &data);
+            pack_snapshot(sos_publication_handle, false, ++snapshot_id, rec->unpack(*c));
+        }
+    }
+
+
+
+
+    // APOLLO-supporting version: This is not how we want to be pulishing/ingesting mass data.
     void process_snapshot(Caliper* c, const SnapshotRecord* trigger_info, const SnapshotRecord* snapshot) {
-        pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
+        //pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
     }
 
     // If it is the end of any iteration, OR the specific client-named attribute, flush.
@@ -141,6 +165,14 @@ class SosService
         s_sos->process_snapshot(c, trigger_info, snapshot);
     }
 
+    static void post_begin_cb(Caliper *c, const Attribute& attr, const Variant& val) {
+        s_sos->post_begin(c, attr);
+    }
+
+    static void pre_end_cb(Caliper *c, const Attribute& attr, const Variant& val) {
+        s_sos->pre_end(c, attr);
+    }
+
     static void post_end_cb(Caliper* c, const Attribute& attr, const Variant& val) {
         s_sos->post_end(c, attr);
     }
@@ -157,7 +189,8 @@ class SosService
             c->events().create_attr_evt.connect(&SosService::create_attr_cb);
             c->events().post_init_evt.connect(&SosService::post_init_cb);
             // c->events().process_snapshot.connect(&SosService::process_snapshot_cb);
-            c->events().post_end_evt.connect(&SosService::post_end_cb);
+            c->events().post_begin_evt.connect(&SosService::post_begin_cb);
+            c->events().pre_end_evt.connect(&SosService::pre_end_cb);
 
             Log(1).stream() << "Registered SOS service" << std::endl;
         }

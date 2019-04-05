@@ -21,10 +21,12 @@
 #include <sstream>
 #include <vector>
 
-#include<sos.h>
+#include <sos.h>
 
 using namespace cali;
 using namespace std;
+
+#define SNAP_MAX 128
 
 namespace
 {
@@ -112,7 +114,7 @@ class SosService
             SnapshotRecord::FixedSnapshotRecord<SNAP_MAX> data;
             SnapshotRecord rec(data);
 
-            c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &data);
+            c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &rec);
         }
     }
 
@@ -121,8 +123,54 @@ class SosService
             SnapshotRecord::FixedSnapshotRecord<SNAP_MAX> data;
             SnapshotRecord rec(data);
 
-            c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &data);
-            pack_snapshot(sos_publication_handle, false, ++snapshot_id, rec->unpack(*c));
+            static unsigned int iter = 0;
+
+            // NOTE: Uncomment in case of emergency:
+            double pull_before, pull_after;
+            double pack_before, pack_after;
+            double recu_before, recu_after;
+            double publ_before, publ_after;
+            double cclr_before, cclr_after;
+
+            SOS_TIME(pull_before);
+            c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &rec);
+            SOS_TIME(pull_after);
+            
+            SOS_TIME(recu_before);
+            auto recunpacked = rec.unpack(*c);
+            SOS_TIME(recu_after);
+
+            SOS_TIME(pack_before);
+            pack_snapshot(sos_publication_handle, false, ++snapshot_id, recunpacked);
+            SOS_TIME(pack_after);
+            
+            iter++;
+            SOS_TIME(publ_before);
+            SOS_publish(sos_publication_handle);
+            SOS_TIME(publ_after);
+            //if (not (iter % ITER_PER_PUBLISH)) {
+            //    SOS_publish(sos_publication_handle);
+            //} else {
+            //    publ_before = 0.0;
+            //    publ_after = 0.0;
+            //}
+            SOS_TIME(cclr_before);
+            c->clear(); //Avoids re-publishing snapshots.
+            SOS_TIME(cclr_after);
+
+            fprintf(stdout,
+                "sos:"
+                " c->pull_snapshot: %0.8F,"
+                " rec.unpack: %0.8F,"
+                " pack_snapshot: %0.8F,"
+                " SOS_publish: %0.8F (%d'th time),"
+                " c->clear: %0.8F\n",
+                pull_after - pull_before,
+                recu_after - recu_before,
+                pack_after - pack_before,
+                publ_after - publ_before, iter,
+                cclr_after - cclr_before);
+            fflush(stdout);
         }
     }
 
@@ -131,14 +179,15 @@ class SosService
 
     // APOLLO-supporting version: This is not how we want to be pulishing/ingesting mass data.
     void process_snapshot(Caliper* c, const SnapshotRecord* trigger_info, const SnapshotRecord* snapshot) {
-        //pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
+        pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
     }
 
-    // If it is the end of any iteration, OR the specific client-named attribute, flush.
+    // APOLLO-supporting version: DISABLED
+    //       (normally...) If it is the end of any iteration, OR the specific client-named attribute, flush.
     void post_end(Caliper* c, const Attribute& attr) {
-        if (   (attr.get(iter_class_attr) == Variant(true))
-            || (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()))
-            flush_and_publish(c);
+        //if (   (attr.get(iter_class_attr) == Variant(true))
+        //    || (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()))
+        //    flush_and_publish(c);
     }
 
     // Initialize the SOS runtime, and create our publication handle
@@ -149,6 +198,13 @@ class SosService
                     SOS_RECEIVES_NO_FEEDBACK, NULL);
         SOS_pub_init(sos_runtime, &sos_publication_handle,
                     "caliper.data", SOS_NATURE_DEFAULT);
+        char *freq_env = NULL;
+        freq_env = getenv("CALI_SOS_ITER_PER_PUBLISH");
+        if (freq_env == NULL) {
+            ITER_PER_PUBLISH = 1;
+        } else {
+            ITER_PER_PUBLISH = atoi(freq_env);
+        }
         // NOTE: Check for trigger_attr again at create_attr(...) because it may
         //       not have been expressed to Caliper yet.
         trigger_attr    = c->get_attribute(config.get("trigger_attr").to_string());
@@ -162,6 +218,7 @@ class SosService
     }
 
     static void process_snapshot_cb(Caliper* c, const SnapshotRecord* trigger_info, const SnapshotRecord* snapshot) {
+        std::cout << "sos: Processing snapshot." << std::endl;
         s_sos->process_snapshot(c, trigger_info, snapshot);
     }
 
@@ -196,7 +253,7 @@ class SosService
         }
 
 public:
-
+    int ITER_PER_PUBLISH;
     static void sos_register(Caliper* c) {
         s_sos.reset(new SosService(c));
     }

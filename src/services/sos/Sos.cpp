@@ -123,71 +123,70 @@ class SosService
             SnapshotRecord::FixedSnapshotRecord<SNAP_MAX> data;
             SnapshotRecord rec(data);
 
-            static unsigned int iter = 0;
+            //static unsigned int iter = 0;
 
             // NOTE: Uncomment in case of emergency:
-            double pull_before, pull_after;
-            double pack_before, pack_after;
-            double recu_before, recu_after;
-            double publ_before, publ_after;
-            double cclr_before, cclr_after;
+            //double pull_before, pull_after;
+            //double pack_before, pack_after;
+            //double recu_before, recu_after;
+            //double publ_before, publ_after;
+            //double cclr_before, cclr_after;
 
-            SOS_TIME(pull_before);
+            // NOTE: We're pulling a snapshot only if this is the trigger attribute.
+
+            //SOS_TIME(pull_before);
             c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &rec);
-            SOS_TIME(pull_after);
+            //SOS_TIME(pull_after);
             
-            SOS_TIME(recu_before);
+            //SOS_TIME(recu_before);
             auto recunpacked = rec.unpack(*c);
-            SOS_TIME(recu_after);
+            //SOS_TIME(recu_after);
 
-            SOS_TIME(pack_before);
+            //SOS_TIME(pack_before);
             pack_snapshot(sos_publication_handle, false, ++snapshot_id, recunpacked);
-            SOS_TIME(pack_after);
+            //SOS_TIME(pack_after);
             
-            iter++;
-            SOS_TIME(publ_before);
+            //iter++;
+            //SOS_TIME(publ_before);
             SOS_publish(sos_publication_handle);
-            SOS_TIME(publ_after);
+            //SOS_TIME(publ_after);
             //if (not (iter % ITER_PER_PUBLISH)) {
             //    SOS_publish(sos_publication_handle);
-            //} else {
+            //} //} else {
             //    publ_before = 0.0;
             //    publ_after = 0.0;
             //}
-            SOS_TIME(cclr_before);
+            //SOS_TIME(cclr_before);
             c->clear(); //Avoids re-publishing snapshots.
-            SOS_TIME(cclr_after);
+            //SOS_TIME(cclr_after);
 
-            fprintf(stdout,
-                "sos:"
-                " c->pull_snapshot: %0.8F,"
-                " rec.unpack: %0.8F,"
-                " pack_snapshot: %0.8F,"
-                " SOS_publish: %0.8F (%d'th time),"
-                " c->clear: %0.8F\n",
-                pull_after - pull_before,
-                recu_after - recu_before,
-                pack_after - pack_before,
-                publ_after - publ_before, iter,
-                cclr_after - cclr_before);
-            fflush(stdout);
+            // fprintf(stdout,
+            //     "sos:"
+            //     " c->pull_snapshot: %0.8F,"
+            //     " rec.unpack: %0.8F,"
+            //     " pack_snapshot: %0.8F,"
+            //     " SOS_publish: %0.8F (%d'th time),"
+            //     " c->clear: %0.8F\n",
+            //     pull_after - pull_before,
+            //     recu_after - recu_before,
+            //     pack_after - pack_before,
+            //     publ_after - publ_before, iter,
+            //     cclr_after - cclr_before);
+            // fflush(stdout);
         }
     }
 
 
 
-
-    // APOLLO-supporting version: This is not how we want to be pulishing/ingesting mass data.
     void process_snapshot(Caliper* c, const SnapshotRecord* trigger_info, const SnapshotRecord* snapshot) {
         pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
     }
 
-    // APOLLO-supporting version: DISABLED
-    //       (normally...) If it is the end of any iteration, OR the specific client-named attribute, flush.
     void post_end(Caliper* c, const Attribute& attr) {
-        //if (   (attr.get(iter_class_attr) == Variant(true))
-        //    || (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()))
-        //    flush_and_publish(c);
+        //if (  (attr.get(iter_class_attr) == Variant(true))
+        if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) {
+            flush_and_publish(c);
+        }
     }
 
     // Initialize the SOS runtime, and create our publication handle
@@ -245,8 +244,8 @@ class SosService
             
             c->events().create_attr_evt.connect(&SosService::create_attr_cb);
             c->events().post_init_evt.connect(&SosService::post_init_cb);
-            // c->events().process_snapshot.connect(&SosService::process_snapshot_cb);
-            c->events().post_begin_evt.connect(&SosService::post_begin_cb);
+            //c->events().process_snapshot.connect(&SosService::process_snapshot_cb);
+            //c->events().post_begin_evt.connect(&SosService::post_begin_cb);
             c->events().pre_end_evt.connect(&SosService::pre_end_cb);
 
             Log(1).stream() << "Registered SOS service" << std::endl;

@@ -42,8 +42,20 @@ const ConfigSet::Entry   configdata[] = {
 };
 
 // Takes an unpacked Caliper snapshot and publishes it in SOS
-void pack_snapshot(SOS_pub* sos_pub, bool yn_publish, int snapshot_id, const std::map< Attribute, std::vector<Variant> >& unpacked_snapshot) {
+void pack_snapshot(SOS_pub* sos_pub, bool yn_publish, int snapshot_id, const std::map< Attribute, std::vector<Variant> >& unpacked_snapshot, Attribute& trigger_attr) {
     for (auto &p : unpacked_snapshot) {
+        if (p.first.id() == trigger_attr.id()) {
+            if (p.second.front().to_int() == 1) {
+                // We're overriding the default, or whatever was passed in
+                // for publishing.
+                SOS_publish(sos_pub);
+                return;
+            } else {
+                // This is our sentinel value, we shouldn't pack it.
+                continue;
+            }
+        }
+
         switch (p.first.type()) {
         case CALI_TYPE_STRING:
         {
@@ -96,7 +108,7 @@ class SosService
         Log(2).stream() << "sos: Publishing Caliper data" << std::endl;
 
         c->flush(nullptr, [this,c](const SnapshotRecord* snapshot){
-                pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
+                pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c), trigger_attr);
                 return true;
             });
         SOS_publish(sos_publication_handle);
@@ -110,12 +122,12 @@ class SosService
 
 
     void post_begin(Caliper *c, const Attribute& attr) {
-        if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) {
-            SnapshotRecord::FixedSnapshotRecord<SNAP_MAX> data;
-            SnapshotRecord rec(data);
-
-            c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &rec);
-        }
+        //if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) {
+        //    SnapshotRecord::FixedSnapshotRecord<SNAP_MAX> data;
+        //    SnapshotRecord rec(data);
+        //
+        //    c->pull_snapshot(CALI_SCOPE_THREAD | CALI_SCOPE_PROCESS, nullptr, &rec);
+        //}
     }
 
     void pre_end(Caliper *c, const Attribute &attr) {
@@ -143,12 +155,17 @@ class SosService
             //SOS_TIME(recu_after);
 
             //SOS_TIME(pack_before);
-            pack_snapshot(sos_publication_handle, false, ++snapshot_id, recunpacked);
+            pack_snapshot(sos_publication_handle, false, ++snapshot_id, recunpacked, trigger_attr);
             //SOS_TIME(pack_after);
             
             //iter++;
             //SOS_TIME(publ_before);
-            SOS_publish(sos_publication_handle);
+            //
+            // NOTE: We're not publishing here anymore because it can be triggered
+            //       by assigning a '1' (rather than '0') to the t_flush->begin(x)
+            //       annotation...   -Chad   (RE: Apollo work)
+            //
+            //SOS_publish(sos_publication_handle);
             //SOS_TIME(publ_after);
             //if (not (iter % ITER_PER_PUBLISH)) {
             //    SOS_publish(sos_publication_handle);
@@ -160,7 +177,7 @@ class SosService
             c->clear(); //Avoids re-publishing snapshots.
             //SOS_TIME(cclr_after);
 
-            // fprintf(stdout,
+            //fprintf(stdout,
             //     "sos:"
             //     " c->pull_snapshot: %0.8F,"
             //     " rec.unpack: %0.8F,"
@@ -172,21 +189,21 @@ class SosService
             //     pack_after - pack_before,
             //     publ_after - publ_before, iter,
             //     cclr_after - cclr_before);
-            // fflush(stdout);
+            //fflush(stdout);
         }
     }
 
 
 
     void process_snapshot(Caliper* c, const SnapshotRecord* trigger_info, const SnapshotRecord* snapshot) {
-        pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c));
+        //pack_snapshot(sos_publication_handle, false, ++snapshot_id, snapshot->unpack(*c), trigger_attr);
     }
 
     void post_end(Caliper* c, const Attribute& attr) {
         //if (  (attr.get(iter_class_attr) == Variant(true))
-        if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) {
-            flush_and_publish(c);
-        }
+        //if (trigger_attr != Attribute::invalid && attr.id() == trigger_attr.id()) {
+        //    flush_and_publish(c);
+        //}
     }
 
     // Initialize the SOS runtime, and create our publication handle
